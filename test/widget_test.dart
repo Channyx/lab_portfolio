@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lab_portfolio/main.dart';
+import 'package:lab_portfolio/providers/network_monitor_provider.dart';
 import 'package:lab_portfolio/screens/home_screen.dart';
+import 'package:lab_portfolio/screens/network_monitor_screen.dart';
 
 void main() {
   setUp(() {
@@ -48,6 +50,19 @@ void main() {
     expect(Theme.of(homeContext).brightness, Brightness.dark);
   });
 
+  testWidgets('Network Monitor opens beside Settings in the Home app bar',
+      (tester) async {
+    await tester.pumpWidget(const LabPortfolioApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Network Monitor'), findsOneWidget);
+    await tester.tap(find.byTooltip('Network Monitor'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NetworkMonitorScreen), findsOneWidget);
+    expect(find.text('Active network'), findsOneWidget);
+  });
+
   testWidgets('Profile name updates Home and survives refresh', (tester) async {
     await tester.pumpWidget(const LabPortfolioApp());
     await tester.pumpAndSettle();
@@ -71,16 +86,28 @@ void main() {
     expect(find.text('Ada Lovelace'), findsOneWidget);
   });
 
-  testWidgets('Marking an activity complete updates its state', (tester) async {
+  testWidgets('Activity 1 opens its dashboard without Network Monitor',
+      (tester) async {
     await tester.pumpWidget(const LabPortfolioApp());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Activity 1'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Mark this activity complete'));
+    expect(find.text('Activity 1 Dashboard'), findsNWidgets(2));
+    expect(find.text('Active network'), findsNothing);
+    expect(find.byType(NetworkMonitorProvider), findsNothing);
+    expect(find.text('Activity 3'), findsOneWidget);
+  });
+
+  testWidgets('Activity 2 opens Network Monitor directly', (tester) async {
+    await tester.pumpWidget(const LabPortfolioApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Marked complete — tap to undo'), findsOneWidget);
+    await tester.tap(find.text('Activity 2'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NetworkMonitorScreen), findsOneWidget);
+    expect(find.text('Active network'), findsOneWidget);
   });
 }

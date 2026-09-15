@@ -5,8 +5,8 @@ import '../providers/app_state_provider.dart';
 import '../widgets/dashboard_card.dart';
 // ignore: unused_import
 import 'activity_placeholder_screen.dart';
+import 'network_monitor_screen.dart';
 import 'settings_screen.dart';
-
 
 class ActivityInfo {
   final int number;
@@ -30,7 +30,7 @@ const List<ActivityInfo> kActivities = [
   ActivityInfo(
     number: 1,
     title: 'Activity 1',
-    subtitle: 'Empty — add your project here',
+    subtitle: 'Open the portfolio dashboard',
     icon: Icons.looks_one_outlined,
     color: Colors.teal,
     routeName: '/activity-1',
@@ -38,7 +38,7 @@ const List<ActivityInfo> kActivities = [
   ActivityInfo(
     number: 2,
     title: 'Activity 2',
-    subtitle: 'Empty — add your project here',
+    subtitle: 'Open Network Monitor',
     icon: Icons.looks_two_outlined,
     color: Colors.deepPurple,
     routeName: '/activity-2',
@@ -69,7 +69,6 @@ const List<ActivityInfo> kActivities = [
   ),
 ];
 
-
 class HomeScreen extends StatelessWidget {
   static const routeName = '/';
   const HomeScreen({super.key});
@@ -84,6 +83,14 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Mobile Computing 2 Portfolio'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.network_check_outlined),
+            tooltip: 'Network Monitor',
+            onPressed: () => Navigator.pushNamed(
+              context,
+              NetworkMonitorScreen.routeName,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',

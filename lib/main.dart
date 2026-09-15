@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/app_state_provider.dart';
+import 'screens/activity_1_dashboard_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/activity_placeholder_screen.dart';
+import 'screens/network_monitor_screen.dart';
 import 'screens/settings_screen.dart';
 
 void main() {
@@ -16,7 +18,7 @@ class LabPortfolioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-       create: (_) => AppStateProvider(),
+      create: (_) => AppStateProvider(),
       child: Consumer<AppStateProvider>(
         builder: (context, appState, _) {
           return MaterialApp(
@@ -38,9 +40,15 @@ class LabPortfolioApp extends StatelessWidget {
             initialRoute: HomeScreen.routeName,
             routes: {
               HomeScreen.routeName: (_) => const HomeScreen(),
+              Activity1DashboardScreen.routeName: (_) =>
+                  const Activity1DashboardScreen(),
+              '/activity-2': (_) => const NetworkMonitorScreen(),
+              NetworkMonitorScreen.routeName: (_) =>
+                  const NetworkMonitorScreen(),
               SettingsScreen.routeName: (_) => const SettingsScreen(),
-              
-              for (final activity in kActivities)
+              for (final activity in kActivities.where(
+                (activity) => activity.number >= 3,
+              ))
                 activity.routeName: (_) => ActivityPlaceholderScreen(
                       activityNumber: activity.number,
                       title: activity.title,
