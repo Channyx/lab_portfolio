@@ -54,9 +54,9 @@ const List<ActivityInfo> kActivities = [
   ActivityInfo(
     number: 4,
     title: 'Activity 4',
-    subtitle: 'Empty — add your project here',
-    icon: Icons.looks_4_outlined,
-    color: Colors.indigo,
+    subtitle: 'Discover nearby peers and chat offline',
+    icon: Icons.forum_outlined,
+    color: Colors.teal,
     routeName: '/activity-4',
   ),
   ActivityInfo(

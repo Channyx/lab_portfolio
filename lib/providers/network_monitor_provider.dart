@@ -25,6 +25,7 @@ class NetworkMonitorProvider extends ChangeNotifier {
     Connectivity? connectivity,
     Stream<List<ConnectivityResult>>? connectivityStream,
     Future<List<ConnectivityResult>> Function()? currentConnectivity,
+    this.handoverGracePeriod = const Duration(milliseconds: 600),
   })  : _connectivity = connectivity ?? Connectivity(),
         _connectivityStream = connectivityStream,
         _currentConnectivity = currentConnectivity {
@@ -36,9 +37,11 @@ class NetworkMonitorProvider extends ChangeNotifier {
   final Connectivity _connectivity;
   final Stream<List<ConnectivityResult>>? _connectivityStream;
   final Future<List<ConnectivityResult>> Function()? _currentConnectivity;
+  final Duration handoverGracePeriod;
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   final List<QueuedNetworkRequest> _queuedRequests = [];
   Timer? _requestTimer;
+  Timer? _offlineTransitionTimer;
   NetworkInterfaceType _activeInterface = NetworkInterfaceType.offline;
   int _networkUpdateVersion = 0;
   int _nextRequestId = 1;
@@ -66,6 +69,23 @@ class NetworkMonitorProvider extends ChangeNotifier {
   void _updateNetwork(List<ConnectivityResult> results) {
     _networkUpdateVersion++;
     final nextInterface = _mapInterface(results);
+    if (nextInterface == NetworkInterfaceType.offline &&
+        _activeInterface != NetworkInterfaceType.offline &&
+        handoverGracePeriod > Duration.zero) {
+      _offlineTransitionTimer?.cancel();
+      _offlineTransitionTimer = Timer(handoverGracePeriod, () {
+        _offlineTransitionTimer = null;
+        _applyNetwork(NetworkInterfaceType.offline);
+      });
+      return;
+    }
+
+    _offlineTransitionTimer?.cancel();
+    _offlineTransitionTimer = null;
+    _applyNetwork(nextInterface);
+  }
+
+  void _applyNetwork(NetworkInterfaceType nextInterface) {
     if (nextInterface == _activeInterface) return;
 
     _activeInterface = nextInterface;
@@ -91,9 +111,11 @@ class NetworkMonitorProvider extends ChangeNotifier {
   }
 
   void enqueueRequest() {
-    _queuedRequests.add(
-      QueuedNetworkRequest(id: _nextRequestId++),
-    );
+    final request = QueuedNetworkRequest(id: _nextRequestId++);
+    if (_activeInterface == NetworkInterfaceType.offline) {
+      request.status = 'Waiting for connection';
+    }
+    _queuedRequests.add(request);
     notifyListeners();
     _processQueue();
   }
@@ -153,6 +175,7 @@ class NetworkMonitorProvider extends ChangeNotifier {
   @override
   void dispose() {
     _networkUpdateVersion++;
+    _offlineTransitionTimer?.cancel();
     _requestTimer?.cancel();
     _subscription?.cancel();
     super.dispose();

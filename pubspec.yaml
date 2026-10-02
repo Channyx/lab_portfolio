@@ -14,6 +14,8 @@ dependencies:
   cupertino_icons: ^1.0.6
   connectivity_plus: ^6.1.4
   http: ^1.5.0
+  flutter_nearby_connections_plus:
+    path: third_party/flutter_nearby_connections_plus
 
 dev_dependencies:
   flutter_test:

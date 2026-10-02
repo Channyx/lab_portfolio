@@ -16,10 +16,26 @@ class NetworkDiagnosticDashboardScreen extends StatefulWidget {
 
 class _NetworkDiagnosticDashboardScreenState
     extends State<NetworkDiagnosticDashboardScreen> {
+  bool _startScheduled = false;
+  NetworkDiagnosticProvider? _diagnostic;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    context.read<NetworkDiagnosticProvider>().start();
+    if (_startScheduled) return;
+    _startScheduled = true;
+    final diagnostic = context.read<NetworkDiagnosticProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _diagnostic = diagnostic;
+      diagnostic.start();
+    });
+  }
+
+  @override
+  void dispose() {
+    _diagnostic?.stop();
+    super.dispose();
   }
 
   @override
@@ -36,38 +52,10 @@ class _NetworkDiagnosticDashboardScreenState
           children: [
             _HealthCard(diagnostic: diagnostic),
             const SizedBox(height: 20),
-            Text(
-              'Connection type',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            SegmentedButton<DiagnosticNetworkType>(
-              segments: const [
-                ButtonSegment(
-                  value: DiagnosticNetworkType.wifi,
-                  icon: Icon(Icons.wifi),
-                  label: Text('Wi-Fi'),
-                ),
-                ButtonSegment(
-                  value: DiagnosticNetworkType.mobileData,
-                  icon: Icon(Icons.signal_cellular_alt),
-                  label: Text('Data'),
-                ),
-                ButtonSegment(
-                  value: DiagnosticNetworkType.offline,
-                  icon: Icon(Icons.cloud_off),
-                  label: Text('Offline'),
-                ),
-              ],
-              selected: {diagnostic.networkType},
-              onSelectionChanged: (selection) => diagnostic.setNetworkType(
-                selection.first,
-              ),
-            ),
+            _DiagnosticNetworkCard(diagnostic: diagnostic),
             const SizedBox(height: 20),
             if (diagnostic.isTesting) const LinearProgressIndicator(),
-            if (diagnostic.errorMessage != null)
+            if (diagnostic.errorMessage != null && diagnostic.hasInternet != false)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
@@ -76,18 +64,45 @@ class _NetworkDiagnosticDashboardScreenState
                 ),
               ),
             const SizedBox(height: 20),
-            Text(
-              'Live measurements',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            _MetricGrid(result: result),
+            if (diagnostic.networkType == DiagnosticNetworkType.offline)
+              const Card(
+                child: ListTile(
+                  leading: Icon(Icons.cloud_off),
+                  title: Text('Live measurements unavailable'),
+                  subtitle: Text('Waiting for Wi-Fi or cellular service.'),
+                ),
+              )
+            else if (diagnostic.hasInternet == false)
+              Card(
+                child: ListTile(
+                  leading: Icon(
+                    Icons.warning_amber_rounded,
+                    color: theme.colorScheme.error,
+                  ),
+                  title: const Text('No internet connection'),
+                    subtitle: Text(diagnostic.errorMessage ??
+                      '${_networkLabel(diagnostic.networkType)} is connected, but internet access is unavailable.'),
+                ),
+              )
+            else ...[
+              Text(
+                'Live measurements',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              _MetricGrid(result: result),
+            ],
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: diagnostic.isTesting ? null : diagnostic.runDiagnostic,
+              onPressed: diagnostic.isTesting ||
+                      diagnostic.networkType == DiagnosticNetworkType.offline
+                  ? null
+                  : diagnostic.runDiagnostic,
               icon: const Icon(Icons.refresh),
-              label: const Text('Run diagnostic now'),
+                label: Text(diagnostic.hasInternet == false
+                  ? 'Check internet again'
+                  : 'Run diagnostic now'),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -96,6 +111,65 @@ class _NetworkDiagnosticDashboardScreenState
                   .toggleActivityCompletion(3),
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Mark Activity 3 complete'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _networkLabel(DiagnosticNetworkType networkType) => switch (networkType) {
+      DiagnosticNetworkType.wifi => 'Wi-Fi',
+      DiagnosticNetworkType.mobileData => 'Cellular',
+      DiagnosticNetworkType.offline => 'Offline',
+    };
+
+class _DiagnosticNetworkCard extends StatelessWidget {
+  const _DiagnosticNetworkCard({required this.diagnostic});
+
+  final NetworkDiagnosticProvider diagnostic;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final networkType = diagnostic.networkType;
+    final isOffline = networkType == DiagnosticNetworkType.offline;
+    final label = _networkLabel(networkType);
+    final icon = switch (networkType) {
+      DiagnosticNetworkType.wifi => Icons.wifi,
+      DiagnosticNetworkType.mobileData => Icons.signal_cellular_alt,
+      DiagnosticNetworkType.offline => Icons.cloud_off,
+    };
+    final color = isOffline ? theme.colorScheme.error : Colors.green;
+    final status = isOffline
+        ? 'Waiting for Wi-Fi or cellular service.'
+        : diagnostic.hasInternet == false
+            ? 'Internet connection unavailable.'
+            : diagnostic.hasInternet == true
+                ? 'Internet connection available.'
+                : 'Checking internet connection.';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Icon(icon, size: 42, color: color),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Active network'),
+                  Text(
+                    label,
+                    style: theme.textTheme.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  Text(status),
+                ],
+              ),
             ),
           ],
         ),
@@ -142,7 +216,11 @@ class _HealthCard extends StatelessWidget {
                         .headlineSmall
                         ?.copyWith(fontWeight: FontWeight.bold, color: color),
                   ),
-                  const Text('Updates automatically every minute.'),
+                  Text(
+                    diagnostic.networkType == DiagnosticNetworkType.offline
+                        ? 'Waiting for Wi-Fi or cellular service.'
+                        : 'Updates automatically every minute.',
+                  ),
                 ],
               ),
             ),

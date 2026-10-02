@@ -25,7 +25,6 @@ class _NetworkMonitorView extends StatelessWidget {
     final activeInterface =
         context.select<NetworkMonitorProvider, NetworkInterfaceType>(
             (monitor) => monitor.activeInterface);
-    final theme = Theme.of(context);
     final isOnline = activeInterface != NetworkInterfaceType.offline;
 
     return Scaffold(
@@ -37,36 +36,6 @@ class _NetworkMonitorView extends StatelessWidget {
             _ConnectionStatusCard(
               interfaceType: activeInterface,
               isOnline: isOnline,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Connection controls',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            SegmentedButton<NetworkInterfaceType>(
-              segments: const [
-                ButtonSegment(
-                  value: NetworkInterfaceType.wifi,
-                  icon: Icon(Icons.wifi),
-                  label: Text('Wi-Fi'),
-                ),
-                ButtonSegment(
-                  value: NetworkInterfaceType.cellular,
-                  icon: Icon(Icons.signal_cellular_alt),
-                  label: Text('Cellular'),
-                ),
-                ButtonSegment(
-                  value: NetworkInterfaceType.offline,
-                  icon: Icon(Icons.cloud_off),
-                  label: Text('Offline'),
-                ),
-              ],
-              selected: {activeInterface},
-              onSelectionChanged: (selection) => context
-                  .read<NetworkMonitorProvider>()
-                  .simulateNetwork(selection.first),
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
