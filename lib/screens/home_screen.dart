@@ -62,7 +62,7 @@ const List<ActivityInfo> kActivities = [
   ActivityInfo(
     number: 5,
     title: 'Activity 5',
-    subtitle: 'Empty — add your project here',
+    subtitle: 'Custom Map & Geofencing Tracker',
     icon: Icons.looks_5_outlined,
     color: Colors.pink,
     routeName: '/activity-5',

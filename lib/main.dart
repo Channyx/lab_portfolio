@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'providers/app_state_provider.dart';
 import 'providers/network_diagnostic_provider.dart';
 import 'screens/activity_1_dashboard_screen.dart';
+import 'screens/activity_5_custom_map_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/activity_placeholder_screen.dart';
 import 'screens/local_mesh_chat_screen.dart';
@@ -56,8 +57,10 @@ class LabPortfolioApp extends StatelessWidget {
               SettingsScreen.routeName: (_) => const SettingsScreen(),
               LocalMeshChatScreen.routeName: (_) =>
                   const LocalMeshChatScreen(),
+              Activity5CustomMapScreen.routeName: (_) =>
+                  const Activity5CustomMapScreen(),
               for (final activity in kActivities.where(
-                (activity) => activity.number >= 5,
+                (activity) => activity.number >= 5 && activity.routeName != Activity5CustomMapScreen.routeName,
               ))
                 activity.routeName: (_) => ActivityPlaceholderScreen(
                       activityNumber: activity.number,
