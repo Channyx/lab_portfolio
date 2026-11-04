@@ -5,7 +5,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/custom_geofence_spot.dart';
-import '../services/google_maps_route_service.dart';
 import '../services/location_service.dart';
 
 class Activity5CustomMapScreen extends StatefulWidget {
@@ -20,6 +19,7 @@ class Activity5CustomMapScreen extends StatefulWidget {
 
 class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
   late final List<CustomGeofenceSpot> _spots;
+  final List<CustomGeofenceSpot> _customSpots = <CustomGeofenceSpot>[];
   GoogleMapController? _mapController;
   Position? _currentPosition;
   bool _permissionGranted = false;
@@ -29,14 +29,9 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
   final Set<String> _notifiedSpotIds = <String>{};
   StreamSubscription<Position>? _positionSubscription;
   MapType _mapType = MapType.normal;
-  final TextEditingController _originController = TextEditingController();
-  final TextEditingController _destinationController = TextEditingController();
-  String? _selectedDestinationId;
-  bool _routeLoading = false;
   bool _showNearbySpots = true;
-  String _routeInfo = '';
-  List<LatLng> _routePoints = <LatLng>[];
-  Set<Polyline> _polylines = <Polyline>{};
+
+  List<CustomGeofenceSpot> get _allSpots => <CustomGeofenceSpot>[..._spots, ..._customSpots];
 
   @override
   void initState() {
@@ -49,8 +44,6 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
   void dispose() {
     _positionSubscription?.cancel();
     _mapController?.dispose();
-    _originController.dispose();
-    _destinationController.dispose();
     super.dispose();
   }
 
@@ -92,7 +85,6 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
       setState(() {
         _currentPosition = position;
         _isTrackingLocation = true;
-        _originController.text = 'My Location';
       });
 
       _centerMapOnPosition(position);
@@ -137,7 +129,7 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
   }
 
   void _checkGeofences(Position position) {
-    for (final CustomGeofenceSpot spot in _spots) {
+    for (final CustomGeofenceSpot spot in _allSpots) {
       final double distance = LocationService.distanceBetween(
         LatLng(position.latitude, position.longitude),
         spot.position,
@@ -209,20 +201,20 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
   }
 
   void _fitMapToSpots() {
-    if (_mapController == null || _spots.isEmpty) {
+    if (_mapController == null || _allSpots.isEmpty) {
       return;
     }
 
-    final double minLat = _spots
+    final double minLat = _allSpots
         .map((spot) => spot.position.latitude)
         .reduce((a, b) => a < b ? a : b);
-    final double maxLat = _spots
+    final double maxLat = _allSpots
         .map((spot) => spot.position.latitude)
         .reduce((a, b) => a > b ? a : b);
-    final double minLng = _spots
+    final double minLng = _allSpots
         .map((spot) => spot.position.longitude)
         .reduce((a, b) => a < b ? a : b);
-    final double maxLng = _spots
+    final double maxLng = _allSpots
         .map((spot) => spot.position.longitude)
         .reduce((a, b) => a > b ? a : b);
 
@@ -236,248 +228,17 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
     );
   }
 
-  Future<void> _showRoutePlannerSheet() async {
-    if (_originController.text.isEmpty && _currentPosition != null) {
-      _originController.text = 'My Location';
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-            return AnimatedPadding(
-              padding: EdgeInsets.only(bottom: bottomInset),
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 52,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'Route planner',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _originController,
-                          decoration: const InputDecoration(
-                            labelText: 'Origin',
-                            hintText: 'My Location or a place name',
-                            prefixIcon: Icon(Icons.my_location_outlined),
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          initialValue: _selectedDestinationId,
-                          decoration: const InputDecoration(
-                            labelText: 'Destination',
-                            prefixIcon: Icon(Icons.flag_outlined),
-                            border: OutlineInputBorder(),
-                          ),
-                          items: _spots.map((spot) {
-                            return DropdownMenuItem<String>(
-                              value: spot.id,
-                              child: Text(spot.name),
-                            );
-                          }).toList(),
-                          onChanged: (String? value) {
-                            setSheetState(() {
-                              _selectedDestinationId = value;
-                              final selectedSpot = _spots.firstWhere(
-                                (spot) => spot.id == value,
-                                orElse: () => _spots.first,
-                              );
-                              _destinationController.text = selectedSpot.name;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _destinationController,
-                          decoration: const InputDecoration(
-                            labelText: 'Or type a destination',
-                            hintText: 'e.g. St. Christine Elementary School',
-                            prefixIcon: Icon(Icons.place_outlined),
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _routeLoading ? null : _buildRoute,
-                            icon: _routeLoading
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.directions),
-                            label: Text(_routeLoading
-                                ? 'Calculating...'
-                                : 'Show Directions'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _buildRoute() async {
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _routeLoading = true;
-      _routeInfo = '';
-    });
-
-    try {
-      final String originInput = _originController.text.trim();
-      final String destinationInput = _destinationController.text.trim();
-
-      LatLng origin;
-      if (originInput.isEmpty || originInput.toLowerCase() == 'my location') {
-        if (_currentPosition == null) {
-          throw Exception('Current location is unavailable.');
-        }
-        origin =
-            LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-      } else {
-        final LatLng? geocodedOrigin =
-            await GoogleMapsRouteService.geocodeAddress(originInput);
-        if (geocodedOrigin == null) {
-          throw Exception('Origin location could not be found.');
-        }
-        origin = geocodedOrigin;
-      }
-
-      LatLng destination;
-      if (destinationInput.isNotEmpty) {
-        final LatLng? geocodedDestination =
-            await GoogleMapsRouteService.geocodeAddress(destinationInput);
-        if (geocodedDestination == null) {
-          throw Exception('Destination location could not be found.');
-        }
-        destination = geocodedDestination;
-      } else if (_selectedDestinationId != null) {
-        final selectedSpot = _spots.firstWhere(
-          (spot) => spot.id == _selectedDestinationId,
-          orElse: () => _spots.first,
-        );
-        destination = selectedSpot.position;
-      } else {
-        throw Exception('Please choose a destination.');
-      }
-
-      final RoutePlan routePlan = await GoogleMapsRouteService.getDirections(
-        origin: origin,
-        destination: destination,
-        mode: 'walking',
-      );
-
-      setState(() {
-        _routePoints = routePlan.points;
-        _routeInfo =
-            '${routePlan.summary} • ${routePlan.distanceText} • ${routePlan.durationText}';
-        _polylines = <Polyline>{
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: routePlan.points,
-            color: Colors.blue,
-            width: 6,
-            patterns: <PatternItem>[PatternItem.dot, PatternItem.gap(8)],
-            consumeTapEvents: true,
-          ),
-        };
-      });
-
-      if (_mapController != null && routePlan.points.isNotEmpty) {
-        final bounds = _createBounds(routePlan.points);
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(bounds, 90),
-        );
-      }
-
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString()),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _routeLoading = false;
-        });
-      }
-    }
-  }
-
-  LatLngBounds _createBounds(List<LatLng> points) {
-    double minLat = points.first.latitude;
-    double maxLat = points.first.latitude;
-    double minLng = points.first.longitude;
-    double maxLng = points.first.longitude;
-
-    for (final point in points) {
-      minLat = point.latitude < minLat ? point.latitude : minLat;
-      maxLat = point.latitude > maxLat ? point.latitude : maxLat;
-      minLng = point.longitude < minLng ? point.longitude : minLng;
-      maxLng = point.longitude > maxLng ? point.longitude : maxLng;
-    }
-
-    return LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
+  Set<Circle> _buildCircles() {
+    return _allSpots
+        .map((CustomGeofenceSpot spot) => Circle(
+              circleId: CircleId(spot.id),
+              center: spot.position,
+              radius: spot.radiusMeters,
+              strokeWidth: 2,
+              strokeColor: spot.accentColor,
+              fillColor: spot.accentColor.withValues(alpha: 0.14),
+            ))
+        .toSet();
   }
 
   Set<Marker> _buildMarkers() {
@@ -496,11 +257,11 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
     }
 
     markers.addAll(
-      _spots.map((CustomGeofenceSpot spot) {
+      _allSpots.map((CustomGeofenceSpot spot) {
         return Marker(
           markerId: MarkerId(spot.id),
           position: spot.position,
-          zIndex: 2,
+          zIndexInt: 2,
           icon: BitmapDescriptor.defaultMarkerWithHue(spot.hue),
           infoWindow: InfoWindow(
             title: spot.name,
@@ -513,6 +274,238 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
     );
 
     return markers;
+  }
+
+  String _formatDistance(double distanceInMeters) {
+    if (distanceInMeters >= 1000) {
+      final double distanceInKm = distanceInMeters / 1000;
+      return '${distanceInKm.toStringAsFixed(distanceInKm >= 10 ? 1 : 2)} km away';
+    }
+    return '${distanceInMeters.round()} m away';
+  }
+
+  String _spotDistanceText(CustomGeofenceSpot spot) {
+    if (_currentPosition == null) {
+      return 'Distance unavailable';
+    }
+
+    final double distance = LocationService.distanceBetween(
+      LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+      spot.position,
+    );
+
+    return _formatDistance(distance);
+  }
+
+  String _spotStatusText(CustomGeofenceSpot spot) {
+    if (_currentPosition == null) {
+      return 'Waiting for location';
+    }
+
+    final double distance = LocationService.distanceBetween(
+      LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+      spot.position,
+    );
+
+    if (distance <= spot.radiusMeters) {
+      return 'Inside geofence';
+    }
+
+    return 'Outside geofence';
+  }
+
+  Future<Map<String, dynamic>?> _showMarkerFormDialog({
+    CustomGeofenceSpot? existingSpot,
+    required LatLng point,
+  }) async {
+    final String dialogTitle =
+        existingSpot == null ? 'Add custom marker' : 'Edit custom marker';
+    final String submitLabel =
+        existingSpot == null ? 'Save marker' : 'Save changes';
+
+    final TextEditingController nameController = TextEditingController(
+      text: existingSpot?.name ?? '',
+    );
+    final TextEditingController radiusController = TextEditingController(
+      text: existingSpot == null
+          ? '100'
+          : existingSpot.radiusMeters.toStringAsFixed(
+              existingSpot.radiusMeters.truncateToDouble() ==
+                      existingSpot.radiusMeters
+                  ? 0
+                  : 1,
+            ),
+    );
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(dialogTitle),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Marker name',
+                    hintText: 'e.g. My favorite lookout',
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Latitude: ${point.latitude.toStringAsFixed(6)}\nLongitude: ${point.longitude.toStringAsFixed(6)}',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: radiusController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Geofence radius (meters)',
+                    hintText: '100',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final String name = nameController.text.trim();
+                final double? radius = double.tryParse(radiusController.text.trim());
+
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a marker name.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                if (radius == null || radius <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Radius must be greater than 0 meters.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop({
+                  'name': name,
+                  'radius': radius,
+                });
+              },
+              child: Text(submitLabel),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _handleMapTap(LatLng point) async {
+    final Map<String, dynamic>? result =
+        await _showMarkerFormDialog(existingSpot: null, point: point);
+
+    if (result == null) {
+      return;
+    }
+
+    final CustomGeofenceSpot spot = CustomGeofenceSpot(
+      id: 'custom-${DateTime.now().microsecondsSinceEpoch}',
+      name: result['name'] as String,
+      shortDescription: 'User-created spot near this area.',
+      details:
+          'Custom geofence marker placed at this location. The point is saved with a geofence radius of ${(result['radius'] as double).round()} meters.',
+      position: point,
+      radiusMeters: result['radius'] as double,
+      hue: BitmapDescriptor.hueMagenta,
+      accentColor: const Color(0xFF9C27B0),
+    );
+
+    setState(() {
+      _customSpots.add(spot);
+      _selectedSpot = spot;
+    });
+
+    if (_mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: point, zoom: 16),
+        ),
+      );
+    }
+
+    _showSpotDetails(spot);
+  }
+
+  Future<void> _editCustomSpot(CustomGeofenceSpot spot) async {
+    final Map<String, dynamic>? result =
+        await _showMarkerFormDialog(existingSpot: spot, point: spot.position);
+
+    if (result == null) {
+      return;
+    }
+
+    final double radius = result['radius'] as double;
+    final String updatedName = result['name'] as String;
+    final int index = _customSpots.indexWhere((CustomGeofenceSpot item) => item.id == spot.id);
+
+    if (index == -1) {
+      return;
+    }
+
+    final CustomGeofenceSpot updatedSpot = CustomGeofenceSpot(
+      id: spot.id,
+      name: updatedName,
+      shortDescription: spot.shortDescription,
+      details:
+          'Custom geofence marker placed at this location. The point is saved with a geofence radius of ${radius.round()} meters.',
+      position: spot.position,
+      radiusMeters: radius,
+      hue: spot.hue,
+      accentColor: spot.accentColor,
+    );
+
+    setState(() {
+      _customSpots[index] = updatedSpot;
+      _selectedSpot = updatedSpot;
+    });
+
+    if (mounted) {
+      _showSpotDetails(updatedSpot);
+    }
+  }
+
+  void _deleteCustomSpot(CustomGeofenceSpot spot) {
+    setState(() {
+      _customSpots.removeWhere((CustomGeofenceSpot item) => item.id == spot.id);
+      if (_selectedSpot?.id == spot.id) {
+        _selectedSpot = null;
+      }
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('${spot.name} deleted.'),
+        ),
+      );
+    }
   }
 
   void _showSpotDetails(CustomGeofenceSpot spot) {
@@ -599,6 +592,67 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                   ],
                 ),
                 const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: spot.accentColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: spot.accentColor.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Distance from you',
+                              style: TextStyle(
+                                color: spot.accentColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _currentPosition == null
+                                  ? 'Location unavailable'
+                                  : _spotDistanceText(spot),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Geofence status',
+                              style: TextStyle(
+                                color: spot.accentColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _currentPosition == null
+                                  ? 'Waiting for location'
+                                  : _spotStatusText(spot),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
                 Text(
                   spot.shortDescription,
                   style: Theme.of(context).textTheme.bodyLarge,
@@ -612,6 +666,39 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (spot.id.startsWith('custom-'))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _editCustomSpot(spot);
+                            },
+                            icon: const Icon(Icons.edit_rounded),
+                            label: const Text('Edit marker'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _deleteCustomSpot(spot);
+                            },
+                            icon: const Icon(Icons.delete_rounded),
+                            label: const Text('Delete'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -656,11 +743,12 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
       ),
       mapType: _mapType,
       markers: _buildMarkers(),
-      polylines: _polylines,
+      circles: _buildCircles(),
       myLocationEnabled: _permissionGranted,
       myLocationButtonEnabled: _permissionGranted,
       zoomControlsEnabled: false,
       compassEnabled: true,
+      onTap: _handleMapTap,
       onMapCreated: (GoogleMapController controller) {
         _mapController = controller;
         _fitMapToSpots();
@@ -746,12 +834,12 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _routeInfo.isNotEmpty
-                        ? 'Route: $_routeInfo'
-                        : (_latestArrivalMessage ??
-                            (_permissionGranted
+                    _latestArrivalMessage ??
+                        (_isTrackingLocation
+                            ? 'Live GPS active: tracking your real-time location.'
+                            : (_permissionGranted
                                 ? (_currentPosition != null
-                                    ? 'Live GPS active: tracking your real-time location.'
+                                    ? 'Tap any place on the map to add a custom geofenced marker.'
                                     : 'Tracking location and waiting for arrival...')
                                 : 'Permission not granted yet.')),
                     style: const TextStyle(
@@ -824,8 +912,9 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children: _spots.map((CustomGeofenceSpot spot) {
+                            children: _allSpots.map((CustomGeofenceSpot spot) {
                               final bool active = _selectedSpot?.id == spot.id;
+                              final String distanceText = _spotDistanceText(spot);
                               return GestureDetector(
                                 onTap: () => _showSpotDetails(spot),
                                 child: Container(
@@ -845,14 +934,28 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                                           : Colors.grey.shade200,
                                     ),
                                   ),
-                                  child: Text(
-                                    spot.name,
-                                    style: TextStyle(
-                                      color: active
-                                          ? spot.accentColor
-                                          : Colors.black87,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        spot.name,
+                                        style: TextStyle(
+                                          color: active
+                                              ? spot.accentColor
+                                              : Colors.black87,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        distanceText,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );
