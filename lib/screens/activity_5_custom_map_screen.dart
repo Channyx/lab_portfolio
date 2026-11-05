@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/custom_geofence_spot.dart';
+import '../services/custom_marker_storage.dart';
 import '../services/location_service.dart';
 
 class Activity5CustomMapScreen extends StatefulWidget {
@@ -18,8 +20,9 @@ class Activity5CustomMapScreen extends StatefulWidget {
 }
 
 class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
-  late final List<CustomGeofenceSpot> _spots;
+  final List<CustomGeofenceSpot> _spots = <CustomGeofenceSpot>[];
   final List<CustomGeofenceSpot> _customSpots = <CustomGeofenceSpot>[];
+  final Set<String> _defaultSpotIds = <String>{};
   GoogleMapController? _mapController;
   Position? _currentPosition;
   bool _permissionGranted = false;
@@ -27,24 +30,135 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
   String? _latestArrivalMessage;
   CustomGeofenceSpot? _selectedSpot;
   final Set<String> _notifiedSpotIds = <String>{};
+  final Connectivity _connectivity = Connectivity();
   StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   MapType _mapType = MapType.normal;
   bool _showNearbySpots = true;
+  String _networkStatus = 'Checking connection…';
 
-  List<CustomGeofenceSpot> get _allSpots => <CustomGeofenceSpot>[..._spots, ..._customSpots];
+  List<CustomGeofenceSpot> get _allSpots =>
+      <CustomGeofenceSpot>[..._spots, ..._customSpots];
 
   @override
   void initState() {
     super.initState();
-    _spots = CustomGeofenceSpot.defaultSpots();
+    final List<CustomGeofenceSpot> defaultSpots =
+        CustomGeofenceSpot.defaultSpots();
+    _spots.addAll(defaultSpots);
+    _defaultSpotIds
+        .addAll(defaultSpots.map((CustomGeofenceSpot spot) => spot.id));
+    unawaited(_loadSavedCustomMarkers());
+    unawaited(_refreshNetworkStatus());
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(
+      (List<ConnectivityResult> results) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _networkStatus = _describeConnectivity(results);
+        });
+      },
+      onError: (_) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _networkStatus = 'Connection unavailable';
+        });
+      },
+    );
     _requestLocationAccess();
   }
 
   @override
   void dispose() {
     _positionSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  String _describeConnectivity(List<ConnectivityResult> results) {
+    if (results.contains(ConnectivityResult.wifi)) {
+      return 'Wi‑Fi connected';
+    }
+    if (results.contains(ConnectivityResult.mobile)) {
+      return 'Cellular connected';
+    }
+    return 'Offline';
+  }
+
+  Future<void> _refreshNetworkStatus() async {
+    try {
+      final List<ConnectivityResult> results =
+          await _connectivity.checkConnectivity();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _networkStatus = _describeConnectivity(results);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _networkStatus = 'Connection unavailable';
+      });
+    }
+  }
+
+  bool _isEditableSpot(CustomGeofenceSpot spot) {
+    return _defaultSpotIds.contains(spot.id) || spot.id.startsWith('custom-');
+  }
+
+  Future<void> _loadSavedCustomMarkers() async {
+    try {
+      final List<CustomGeofenceSpot> savedMarkers =
+          await CustomMarkerStorage.loadMarkers();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _customSpots
+          ..clear()
+          ..addAll(savedMarkers);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to load saved custom markers.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _persistCustomMarkers() async {
+    try {
+      await CustomMarkerStorage.saveMarkers(_customSpots);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save custom markers offline.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _requestLocationAccess() async {
@@ -364,7 +478,8 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: radiusController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
                     labelText: 'Geofence radius (meters)',
                     hintText: '100',
@@ -381,7 +496,8 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
             FilledButton(
               onPressed: () {
                 final String name = nameController.text.trim();
-                final double? radius = double.tryParse(radiusController.text.trim());
+                final double? radius =
+                    double.tryParse(radiusController.text.trim());
 
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -440,6 +556,7 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
       _customSpots.add(spot);
       _selectedSpot = spot;
     });
+    unawaited(_persistCustomMarkers());
 
     if (_mapController != null) {
       _mapController!.animateCamera(
@@ -462,11 +579,6 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
 
     final double radius = result['radius'] as double;
     final String updatedName = result['name'] as String;
-    final int index = _customSpots.indexWhere((CustomGeofenceSpot item) => item.id == spot.id);
-
-    if (index == -1) {
-      return;
-    }
 
     final CustomGeofenceSpot updatedSpot = CustomGeofenceSpot(
       id: spot.id,
@@ -481,9 +593,20 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
     );
 
     setState(() {
-      _customSpots[index] = updatedSpot;
+      final int defaultIndex =
+          _spots.indexWhere((CustomGeofenceSpot item) => item.id == spot.id);
+      if (defaultIndex >= 0) {
+        _spots[defaultIndex] = updatedSpot;
+      } else {
+        final int customIndex = _customSpots
+            .indexWhere((CustomGeofenceSpot item) => item.id == spot.id);
+        if (customIndex >= 0) {
+          _customSpots[customIndex] = updatedSpot;
+        }
+      }
       _selectedSpot = updatedSpot;
     });
+    unawaited(_persistCustomMarkers());
 
     if (mounted) {
       _showSpotDetails(updatedSpot);
@@ -497,6 +620,7 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
         _selectedSpot = null;
       }
     });
+    unawaited(_persistCustomMarkers());
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -666,7 +790,7 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (spot.id.startsWith('custom-'))
+                if (_isEditableSpot(spot))
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Row(
@@ -681,20 +805,22 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                             label: const Text('Edit marker'),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                              _deleteCustomSpot(spot);
-                            },
-                            icon: const Icon(Icons.delete_rounded),
-                            label: const Text('Delete'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red.shade700,
+                        if (spot.id.startsWith('custom-')) ...<Widget>[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                _deleteCustomSpot(spot);
+                              },
+                              icon: const Icon(Icons.delete_rounded),
+                              label: const Text('Delete'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -848,6 +974,29 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        _networkStatus == 'Offline'
+                            ? Icons
+                                .signal_cellular_connected_no_internet_4_bar_rounded
+                            : _networkStatus == 'Wi‑Fi connected'
+                                ? Icons.wifi_rounded
+                                : Icons.signal_cellular_4_bar_rounded,
+                        size: 16,
+                        color: Colors.grey.shade700,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Network: $_networkStatus',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
                   if (_currentPosition != null)
                     Text(
                       'Lat: ${_currentPosition!.latitude.toStringAsFixed(5)} • '
@@ -914,7 +1063,8 @@ class _Activity5CustomMapScreenState extends State<Activity5CustomMapScreen> {
                             runSpacing: 8,
                             children: _allSpots.map((CustomGeofenceSpot spot) {
                               final bool active = _selectedSpot?.id == spot.id;
-                              final String distanceText = _spotDistanceText(spot);
+                              final String distanceText =
+                                  _spotDistanceText(spot);
                               return GestureDetector(
                                 onTap: () => _showSpotDetails(spot),
                                 child: Container(
